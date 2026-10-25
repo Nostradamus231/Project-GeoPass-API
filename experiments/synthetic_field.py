@@ -12,9 +12,10 @@ DENSITY = 1.6
 
 
 class SyntheticField:
-    def __init__(self, seed: int, target_cv: float, contour_coords: list[tuple[float, float]] | None = None, grid_step: float = 5.0):
+    def __init__(self, seed: int, target_cv: float, contour_coords: list[tuple[float, float]] | None = None, grid_step: float = 5.0, field_mode: str = "edge_thin"):
         self.seed = int(seed)
         self.target_cv = float(target_cv)
+        self.field_mode = str(field_mode)
         coords = contour_coords if contour_coords is not None else RECT_CONTOUR
         self.poly = Polygon(coords)
         self.area = float(self.poly.area)
@@ -31,13 +32,22 @@ class SyntheticField:
 
         num_lenses = int(rng.integers(3, 6))
         self.lenses = []
-        for _ in range(num_lenses):
-            cx = float(rng.uniform(minx + 0.1 * (maxx - minx), maxx - 0.1 * (maxx - minx)))
-            cy = float(rng.uniform(miny + 0.1 * (maxy - miny), maxy - 0.1 * (maxy - miny)))
-            sx = float(rng.uniform(80.0, 220.0))
-            sy = float(rng.uniform(80.0, 220.0))
-            amp = float(rng.uniform(-2.0, 3.5))
-            self.lenses.append((cx, cy, sx, sy, amp))
+        if self.field_mode == "neutral":
+            for _ in range(num_lenses):
+                cx = float(rng.uniform(minx, maxx))
+                cy = float(rng.uniform(miny, maxy))
+                sx = float(rng.uniform(80.0, 220.0))
+                sy = float(rng.uniform(80.0, 220.0))
+                amp = float(rng.uniform(-2.5, 2.5))
+                self.lenses.append((cx, cy, sx, sy, amp))
+        else:
+            for _ in range(num_lenses):
+                cx = float(rng.uniform(minx + 0.1 * (maxx - minx), maxx - 0.1 * (maxx - minx)))
+                cy = float(rng.uniform(miny + 0.1 * (maxy - miny), maxy - 0.1 * (maxy - miny)))
+                sx = float(rng.uniform(80.0, 220.0))
+                sy = float(rng.uniform(80.0, 220.0))
+                amp = float(rng.uniform(-2.0, 3.5))
+                self.lenses.append((cx, cy, sx, sy, amp))
 
         self.waves = []
         for _ in range(12):
@@ -53,6 +63,13 @@ class SyntheticField:
         inside_mask = shapely.contains_xy(self.poly, xx.ravel(), yy.ravel())
         self.grid_x = xx.ravel()[inside_mask]
         self.grid_y = yy.ravel()[inside_mask]
+
+        if self.field_mode == "neutral":
+            self.cx_trend = float(np.mean(self.grid_x))
+            self.cy_trend = float(np.mean(self.grid_y))
+        else:
+            self.cx_trend = self.cx_mid
+            self.cy_trend = self.cy_mid
 
         v_grid = self._raw_v(self.grid_x, self.grid_y)
         self.v_mean = float(np.mean(v_grid))
@@ -80,7 +97,7 @@ class SyntheticField:
     def _raw_v(self, x, y):
         x_arr = np.asarray(x, dtype=float)
         y_arr = np.asarray(y, dtype=float)
-        v = self.tx * (x_arr - self.cx_mid) + self.ty * (y_arr - self.cy_mid)
+        v = self.tx * (x_arr - self.cx_trend) + self.ty * (y_arr - self.cy_trend)
         for cx, cy, sx, sy, amp in self.lenses:
             v = v + amp * np.exp(-(((x_arr - cx)**2) / (2.0 * sx**2) + ((y_arr - cy)**2) / (2.0 * sy**2)))
         for kx, ky, phi, w_amp in self.waves:

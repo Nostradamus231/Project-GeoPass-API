@@ -167,6 +167,27 @@ def test_estimators():
     assert abs(ev - 5.0) < 1e-6
 
 
+def test_field_modes():
+    import numpy as np
+    from experiments.synthetic_field import SyntheticField
+    f_def = SyntheticField(123, 0.25)
+    f_edge = SyntheticField(123, 0.25, field_mode="edge_thin")
+    assert abs(f_def.field_value(100.0, 100.0) - 3.252471572011291) < 1e-9
+    assert abs(f_edge.field_value(100.0, 100.0) - 3.252471572011291) < 1e-9
+
+    all_c, all_e, all_o = [], [], []
+    for s in range(200):
+        f_neu = SyntheticField(seed=s, target_cv=0.25, field_mode="neutral")
+        assert abs(f_neu.actual_cv - 0.25) <= 0.03
+        mx = (f_neu.grid_x >= 250) & (f_neu.grid_x <= 750) & (f_neu.grid_y >= 150) & (f_neu.grid_y <= 450)
+        vals = f_neu.field_value(f_neu.grid_x, f_neu.grid_y)
+        all_c.append(np.mean(vals[mx]))
+        all_e.append(np.mean(vals[~mx]))
+        all_o.append(np.mean(vals))
+    diff = abs(np.mean(all_c) - np.mean(all_e)) / np.mean(all_o)
+    assert diff < 0.05
+
+
 def run_tests():
     test_square_four_boreholes()
     test_two_boreholes_sum()
@@ -178,6 +199,7 @@ def run_tests():
     test_sign_test_ten_of_ten()
     test_bootstrap_ci()
     test_estimators()
+    test_field_modes()
     print("ALL EXPERIMENT TESTS PASSED")
 
 

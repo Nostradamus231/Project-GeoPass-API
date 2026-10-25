@@ -57,6 +57,8 @@ def paired_bootstrap_ci(
         return {
             "delta_bias_ci": (0.0, 0.0),
             "delta_rmse_ci": (0.0, 0.0),
+            "bias_arith_ci": (0.0, 0.0),
+            "bias_voronoi_ci": (0.0, 0.0),
         }
 
     rng = np.random.default_rng(int(seed))
@@ -75,8 +77,32 @@ def paired_bootstrap_ci(
 
     delta_bias_ci = (float(np.percentile(diff_bias, 2.5)), float(np.percentile(diff_bias, 97.5)))
     delta_rmse_ci = (float(np.percentile(diff_rmse, 2.5)), float(np.percentile(diff_rmse, 97.5)))
+    bias_arith_ci = (float(np.percentile(bias_a, 2.5)), float(np.percentile(bias_a, 97.5)))
+    bias_voronoi_ci = (float(np.percentile(bias_v, 2.5)), float(np.percentile(bias_v, 97.5)))
 
     return {
         "delta_bias_ci": delta_bias_ci,
         "delta_rmse_ci": delta_rmse_ci,
+        "bias_arith_ci": bias_arith_ci,
+        "bias_voronoi_ci": bias_voronoi_ci,
     }
+
+
+def holm_bonferroni_correction(p_values: list[float] | np.ndarray) -> list[float]:
+    p_arr = np.asarray(p_values, dtype=float)
+    n = len(p_arr)
+    if n == 0:
+        return []
+    order = np.argsort(p_arr)
+    sorted_p = p_arr[order]
+    adj_sorted = np.zeros(n, dtype=float)
+    cum_max = 0.0
+    for i in range(n):
+        multiplier = n - i
+        val = min(1.0, sorted_p[i] * multiplier)
+        if val > cum_max:
+            cum_max = val
+        adj_sorted[i] = cum_max
+    adj_p = np.zeros(n, dtype=float)
+    adj_p[order] = adj_sorted
+    return [float(x) for x in adj_p]
