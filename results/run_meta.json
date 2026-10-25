@@ -1,0 +1,11 @@
+{
+  "python_version": "3.14.2",
+  "numpy_version": "2.5.4",
+  "shapely_version": "2.2.0",
+  "seed": 20261025,
+  "repeats": 1000,
+  "start_time": "2026-10-25T11:14:53.263352+00:00",
+  "end_time": "2026-10-25T11:17:06.733836+00:00",
+  "duration_seconds": 133.47,
+  "git_commit": "97aec198bb14c2dc0f897b13001608bc5545a3ea"
+}

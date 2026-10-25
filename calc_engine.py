@@ -1,6 +1,7 @@
 from datetime import datetime
 import numpy as np
-from shapely.geometry import Point, Polygon
+from shapely.geometry import MultiPoint, Point, Polygon
+from shapely.ops import voronoi_diagram
 
 
 class GeometryError(Exception):
@@ -72,6 +73,73 @@ def _classify_reserves(boreholes_per_ha: float, cv_pct: float) -> str:
     return "C2"
 
 
+def voronoi_weights(points: list[tuple[float, float]], contour: Polygon, return_fallback: bool = False) -> list[float] | tuple[list[float], bool]:
+    n_pts = len(points)
+    if n_pts == 0:
+        return ([], False) if return_fallback else []
+
+    contour_area = float(contour.area)
+    if contour_area <= 0:
+        raise GeometryError("Площадь контура должна быть больше нуля")
+
+    unique_pts = {(float(p[0]), float(p[1])) for p in points}
+    is_collinear = False
+    if n_pts >= 3 and len(unique_pts) == n_pts:
+        hull = MultiPoint([Point(float(p[0]), float(p[1])) for p in points]).convex_hull
+        if hull.geom_type in ("Point", "LineString"):
+            is_collinear = True
+
+    if n_pts < 3 or len(unique_pts) < n_pts or is_collinear:
+        equal_w = contour_area / float(n_pts)
+        weights = [equal_w] * n_pts
+        return (weights, True) if return_fallback else weights
+
+    minx, miny, maxx, maxy = contour.bounds
+    for px, py in points:
+        minx = min(minx, float(px))
+        miny = min(miny, float(py))
+        maxx = max(maxx, float(px))
+        maxy = max(maxy, float(py))
+    dx = max(maxx - minx, 10.0)
+    dy = max(maxy - miny, 10.0)
+    env_poly = Polygon([
+        (minx - 2 * dx, miny - 2 * dy),
+        (maxx + 2 * dx, miny - 2 * dy),
+        (maxx + 2 * dx, maxy + 2 * dy),
+        (minx - 2 * dx, maxy + 2 * dy),
+    ])
+
+    pt_objs = [Point(float(p[0]), float(p[1])) for p in points]
+    try:
+        vd = voronoi_diagram(MultiPoint(pt_objs), envelope=env_poly)
+    except Exception:
+        equal_w = contour_area / float(n_pts)
+        weights = [equal_w] * n_pts
+        return (weights, True) if return_fallback else weights
+
+    cells = list(vd.geoms)
+    weights = []
+    for pt in pt_objs:
+        matched_cell = None
+        for cell in cells:
+            if cell.contains(pt) or cell.distance(pt) < 1e-9:
+                matched_cell = cell
+                break
+        if matched_cell is not None:
+            inter = matched_cell.intersection(contour)
+            weights.append(float(inter.area))
+        else:
+            weights.append(0.0)
+
+    total_w = sum(weights)
+    if abs(total_w - contour_area) > 1e-6 * contour_area:
+        raise GeometryError(
+            f"Сумма весов Вороного ({total_w:.4f}) не совпадает с площадью контура ({contour_area:.4f})"
+        )
+
+    return (weights, False) if return_fallback else weights
+
+
 def calculate_deposit(payload: dict) -> dict:
     company_name = payload["company_name"]
     deposit_name = payload["deposit_name"]
@@ -109,9 +177,16 @@ def calculate_deposit(payload: dict) -> dict:
         area_deviation_pct = round(abs(area_ha - declared_area_ha) / declared_area_ha * 100.0, 2)
 
     thicknesses = np.array([float(b["thickness_m"]) for b in boreholes_raw], dtype=float)
-    weights = np.array([float(b.get("weight", 1.0)) for b in boreholes_raw], dtype=float)
+    weighting_method = payload.get("weighting_method", "manual")
+    if weighting_method == "voronoi":
+        weights_list, weighting_fallback = voronoi_weights(metric_boreholes, poly, return_fallback=True)
+        weights = np.array(weights_list, dtype=float)
+    else:
+        weights = np.array([float(b.get("weight", 1.0)) for b in boreholes_raw], dtype=float)
+        weighting_fallback = False
 
     thickness_weighted_m = float(np.average(thicknesses, weights=weights))
+    thickness_arithmetic_m = float(np.mean(thicknesses))
     thickness_min_m = float(np.min(thicknesses))
     thickness_max_m = float(np.max(thicknesses))
     thickness_mean = float(np.mean(thicknesses))
@@ -158,13 +233,13 @@ def calculate_deposit(payload: dict) -> dict:
     )
 
     fmt_borehole_rows = []
-    for b in boreholes_raw:
+    for idx, b in enumerate(boreholes_raw):
         fmt_borehole_rows.append({
             "borehole_id": str(b["borehole_id"]),
             "x": fmt_num(b["x"], 1),
             "y": fmt_num(b["y"], 1),
             "thickness_m": fmt_num(b["thickness_m"], 2),
-            "weight": fmt_num(b.get("weight", 1.0), 2),
+            "weight": fmt_num(weights[idx], 2),
         })
 
     generated_date = datetime.now().strftime("%d.%m.%Y")
@@ -386,6 +461,7 @@ def calculate_deposit(payload: dict) -> dict:
         "boreholes_count": boreholes_count,
         "boreholes_outside_contour": boreholes_outside_contour,
         "thickness_weighted_m": round(thickness_weighted_m, 2),
+        "thickness_arithmetic_m": round(thickness_arithmetic_m, 2),
         "thickness_min_m": round(thickness_min_m, 2),
         "thickness_max_m": round(thickness_max_m, 2),
         "thickness_cv_pct": round(thickness_cv_pct, 2),
@@ -394,6 +470,22 @@ def calculate_deposit(payload: dict) -> dict:
         "reserves_t": round(reserves_t, 2),
         "reserves_kt": reserves_kt,
         "reserves_category": reserves_category,
+        "weighting_method": weighting_method,
+        "weighting_fallback": weighting_fallback,
+        "summary": {
+            "area_m2": round(area_m2, 2),
+            "area_ha": round(area_ha, 4),
+            "thickness_weighted_m": round(thickness_weighted_m, 2),
+            "thickness_arithmetic_m": round(thickness_arithmetic_m, 2),
+            "volume_m3": round(volume_m3, 2),
+            "reserves_t": round(reserves_t, 2),
+            "reserves_kt": reserves_kt,
+            "reserves_category": reserves_category,
+            "boreholes_outside_contour": boreholes_outside_contour,
+            "corner_points_count": len(corner_points),
+            **({"weighting_method": "voronoi", "weighting_fallback": weighting_fallback} if weighting_method == "voronoi" else {}),
+            **({"reserves_balance_warning": reserves_balance_warning} if reserves_balance_warning else {}),
+        },
         "quality": quality,
         "borehole_rows": fmt_borehole_rows,
         "corner_points": corner_points,

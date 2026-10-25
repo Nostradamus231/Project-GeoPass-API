@@ -36,6 +36,7 @@ def generate_passport(request: PassportRequest):
         "area_m2": calc_result["area_m2"],
         "area_ha": calc_result["area_ha"],
         "thickness_weighted_m": calc_result["thickness_weighted_m"],
+        "thickness_arithmetic_m": calc_result["thickness_arithmetic_m"],
         "volume_m3": calc_result["volume_m3"],
         "reserves_t": calc_result["reserves_t"],
         "reserves_kt": calc_result["reserves_kt"],
@@ -43,6 +44,9 @@ def generate_passport(request: PassportRequest):
         "boreholes_outside_contour": calc_result["boreholes_outside_contour"],
         "corner_points_count": len(calc_result.get("corner_points", [])),
     }
+    if calc_result.get("weighting_method") == "voronoi":
+        summary["weighting_method"] = "voronoi"
+        summary["weighting_fallback"] = calc_result.get("weighting_fallback", False)
     if calc_result.get("reserves_balance_warning"):
         summary["reserves_balance_warning"] = calc_result["reserves_balance_warning"]
 

@@ -140,6 +140,7 @@ class PassportRequest(BaseModel):
     quality: QualityModel
     density_t_m3: float = Field(ge=0.5, le=3.0, allow_inf_nan=False)
     declared_area_ha: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    weighting_method: Literal["manual", "voronoi"] = "manual"
 
     confidentiality_stamp: str | None = None
     copy_number: str | None = None
