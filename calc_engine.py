@@ -14,6 +14,14 @@ CATEGORY_THRESHOLDS = (
 )
 
 
+def fmt_num(value: float | int | None, digits: int = 0) -> str:
+    if value is None:
+        return ""
+    val_float = float(value)
+    formatted = f"{val_float:,.{digits}f}"
+    return formatted.replace(",", "\u00a0").replace(".", ",")
+
+
 def _convert_to_metric(coords: list[tuple[float, float]], center_lon: float, center_lat: float) -> list[tuple[float, float]]:
     r = 6371008.8
     phi0 = np.radians(center_lat)
@@ -100,37 +108,62 @@ def calculate_deposit(payload: dict) -> dict:
         f"Месторождение «{deposit_name}» расположено в регионе {region}. "
         f"Полезная толща сложена полезным ископаемым ({mineral_type}). "
         f"По результатам бурения {boreholes_count} скважин средневзвешенная мощность пласта составляет "
-        f"{thickness_weighted_m:.2f} м (минимальная — {thickness_min_m:.2f} м, максимальная — {thickness_max_m:.2f} м). "
-        f"Коэффициент вариации мощности составляет {thickness_cv_pct:.1f}%, что характеризует продуктивный горизонт как "
+        f"{fmt_num(thickness_weighted_m, 2)} м (минимальная — {fmt_num(thickness_min_m, 2)} м, максимальная — {fmt_num(thickness_max_m, 2)} м). "
+        f"Коэффициент вариации мощности составляет {fmt_num(thickness_cv_pct, 1)}%, что характеризует продуктивный горизонт как "
         f"пласт с {stability_text} выдержанностью залегания."
     )
 
     narrative_reserves = (
-        f"Подсчёт запасов полезного ископаемого выполнен в границах горного отвода площадью {area_ha:.2f} га "
-        f"({area_m2:.1f} м²). Геологический объём продуктивной толщи составляет {volume_m3:.1f} м³. "
-        f"При принятой средней плотности минерального сырья {density_t_m3:.2f} т/м³ балансовые запасы сырья оцениваются в "
-        f"{reserves_t:.1f} т ({reserves_kt:.3f} тыс. т). "
+        f"Подсчёт запасов полезного ископаемого выполнен в границах горного отвода площадью {fmt_num(area_ha, 2)} га "
+        f"({fmt_num(area_m2, 0)} м²). Геологический объём продуктивной толщи составляет {fmt_num(volume_m3, 0)} м³. "
+        f"При принятой средней плотности минерального сырья {fmt_num(density_t_m3, 2)} т/м³ балансовые запасы сырья оцениваются в "
+        f"{fmt_num(reserves_t, 0)} т ({fmt_num(reserves_kt, 3)} тыс. т). "
         f"По степени изученности и плотности разведочной сети запасы отнесены к условной категории {reserves_category}."
     )
 
     narrative_quality = (
         f"Согласно результатам лабораторных анализов, полезное ископаемое имеет модуль крупности "
-        f"{quality['modulus_fineness']:.2f}, содержание глинистых и пылевидных частиц {quality['clay_content_pct']:.2f}%, "
-        f"влажность {quality['moisture_pct']:.2f}% и насыпную плотность {quality['bulk_density_t_m3']:.2f} т/м³. "
+        f"{fmt_num(quality['modulus_fineness'], 2)}, содержание глинистых и пылевидных частиц {fmt_num(quality['clay_content_pct'], 1)}%, "
+        f"влажность {fmt_num(quality['moisture_pct'], 1)}% и насыпную плотность {fmt_num(quality['bulk_density_t_m3'], 2)} т/м³. "
         f"Качественные характеристики сырья соответствуют установленным нормативным требованиям к строительным пескам."
     )
 
-    borehole_rows = []
+    fmt_borehole_rows = []
     for b in boreholes_raw:
-        borehole_rows.append({
-            "borehole_id": b["borehole_id"],
-            "x": round(float(b["x"]), 2),
-            "y": round(float(b["y"]), 2),
-            "thickness_m": round(float(b["thickness_m"]), 2),
-            "weight": round(float(b.get("weight", 1.0)), 2),
+        fmt_borehole_rows.append({
+            "borehole_id": str(b["borehole_id"]),
+            "x": fmt_num(b["x"], 1),
+            "y": fmt_num(b["y"], 1),
+            "thickness_m": fmt_num(b["thickness_m"], 2),
+            "weight": fmt_num(b.get("weight", 1.0), 2),
         })
 
     generated_date = datetime.now().strftime("%d.%m.%Y")
+
+    fmt = {
+        "area_ha": fmt_num(area_ha, 2),
+        "area_m2": fmt_num(area_m2, 0),
+        "perimeter_m": fmt_num(perimeter_m, 0),
+        "declared_area_ha": fmt_num(declared_area_ha, 2) if declared_area_ha is not None else "",
+        "area_deviation_pct": fmt_num(area_deviation_pct, 1) if area_deviation_pct is not None else "",
+        "boreholes_count": str(boreholes_count),
+        "thickness_weighted_m": fmt_num(thickness_weighted_m, 2),
+        "thickness_min_m": fmt_num(thickness_min_m, 2),
+        "thickness_max_m": fmt_num(thickness_max_m, 2),
+        "thickness_cv_pct": fmt_num(thickness_cv_pct, 1),
+        "volume_m3": fmt_num(volume_m3, 0),
+        "density_t_m3": fmt_num(density_t_m3, 2),
+        "reserves_t": fmt_num(reserves_t, 0),
+        "reserves_kt": fmt_num(reserves_kt, 3),
+        "reserves_category": reserves_category,
+        "quality": {
+            "modulus_fineness": fmt_num(quality["modulus_fineness"], 2),
+            "clay_content_pct": fmt_num(quality["clay_content_pct"], 1),
+            "moisture_pct": fmt_num(quality["moisture_pct"], 1),
+            "bulk_density_t_m3": fmt_num(quality["bulk_density_t_m3"], 2),
+        },
+        "borehole_rows": fmt_borehole_rows,
+    }
 
     return {
         "company_name": company_name,
@@ -156,7 +189,8 @@ def calculate_deposit(payload: dict) -> dict:
         "reserves_kt": reserves_kt,
         "reserves_category": reserves_category,
         "quality": quality,
-        "borehole_rows": borehole_rows,
+        "borehole_rows": fmt_borehole_rows,
+        "fmt": fmt,
         "narrative_geology": narrative_geology,
         "narrative_reserves": narrative_reserves,
         "narrative_quality": narrative_quality,

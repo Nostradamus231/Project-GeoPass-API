@@ -12,6 +12,8 @@ _deposit_names: dict[str, str] = {}
 
 
 def build_passport(context: dict) -> str:
+    if "fmt" not in context or not isinstance(context["fmt"], dict):
+        raise DocumentBuildError("В контексте отсутствует обязательный словарь форматированных данных 'fmt'")
     try:
         template_path = Path(__file__).resolve().parent / "templates" / "passport_template.docx"
         output_dir = Path(__file__).resolve().parent / "output"
