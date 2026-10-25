@@ -108,7 +108,15 @@ def get_git_info() -> tuple[str | None, bool | None]:
     try:
         status_res = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True, check=True)
         lines = [line.strip() for line in status_res.stdout.splitlines() if line.strip()]
-        relevant_dirty = any(not line.startswith("?? results") for line in lines)
+        relevant_dirty = any(
+            not (
+                line.startswith("?? results")
+                or " results" in line
+                or "results/" in line
+                or "results_baseline" in line
+            )
+            for line in lines
+        )
         is_dirty = relevant_dirty
     except Exception:
         is_dirty = None
