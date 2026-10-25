@@ -1,0 +1,86 @@
+{
+  "total_scenarios": 150,
+  "voronoi_lower_rmse_count": 150,
+  "delta_rmse_ci_includes_zero_count": 5,
+  "delta_rmse_ci_includes_zero_scenarios": [
+    {
+      "scenario": "cv_low",
+      "contour": "rect",
+      "network_type": "random",
+      "n": 8,
+      "delta_rmse": 0.000875320398919896,
+      "delta_rmse_ci_lower": -0.0004345429447959213,
+      "delta_rmse_ci_upper": 0.002171102994406458
+    },
+    {
+      "scenario": "cv_low",
+      "contour": "rect",
+      "network_type": "preferential_k1",
+      "n": 8,
+      "delta_rmse": 0.0005145862322758488,
+      "delta_rmse_ci_lower": -0.0008787369173583702,
+      "delta_rmse_ci_upper": 0.001937890746345727
+    },
+    {
+      "scenario": "cv_low",
+      "contour": "poly",
+      "network_type": "preferential_k1",
+      "n": 8,
+      "delta_rmse": 0.0013550289557685072,
+      "delta_rmse_ci_lower": -1.2729130890240823e-06,
+      "delta_rmse_ci_upper": 0.0026720364290375035
+    },
+    {
+      "scenario": "cv_med",
+      "contour": "rect",
+      "network_type": "random",
+      "n": 8,
+      "delta_rmse": 0.0014163810113667352,
+      "delta_rmse_ci_lower": -0.0018963493395460548,
+      "delta_rmse_ci_upper": 0.004914874316501485
+    },
+    {
+      "scenario": "cv_med",
+      "contour": "poly",
+      "network_type": "random",
+      "n": 8,
+      "delta_rmse": 0.0013188947700931153,
+      "delta_rmse_ci_lower": -0.00168974501673864,
+      "delta_rmse_ci_upper": 0.004323707824666487
+    }
+  ],
+  "abs_bias_voronoi_lower_by_network": {
+    "regular": 30,
+    "random": 3,
+    "clustered": 1,
+    "preferential_k1": 28,
+    "preferential_k2": 30
+  },
+  "rmse_rel_reduction_by_network": {
+    "regular": {
+      "median": 10.39,
+      "min": 3.47,
+      "max": 33.81
+    },
+    "random": {
+      "median": 14.19,
+      "min": 1.54,
+      "max": 31.49
+    },
+    "clustered": {
+      "median": 22.85,
+      "min": 4.77,
+      "max": 46.45
+    },
+    "preferential_k1": {
+      "median": 21.95,
+      "min": 1.41,
+      "max": 42.71
+    },
+    "preferential_k2": {
+      "median": 27.05,
+      "min": 3.45,
+      "max": 46.07
+    }
+  }
+}

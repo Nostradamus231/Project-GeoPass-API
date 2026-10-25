@@ -1,0 +1,21 @@
+{
+  "python_version": "3.14.2",
+  "numpy_version": "2.5.4",
+  "shapely_version": "2.2.0",
+  "matplotlib_version": "3.11.2",
+  "seed": 20261025,
+  "repeats": 1000,
+  "field_mode": "neutral",
+  "cli_args": {
+    "repeats": 1000,
+    "seed": 20261025,
+    "out": "results\\neutral",
+    "field_mode": "neutral",
+    "workers": 12
+  },
+  "start_time": "2026-10-25T12:44:36.876218+00:00",
+  "end_time": "2026-10-25T12:46:34.022795+00:00",
+  "duration_seconds": 117.15,
+  "git_commit": "8306a81d954f81145ef65b8ae145dedc54489842",
+  "git_dirty": false
+}

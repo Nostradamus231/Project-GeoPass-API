@@ -54,7 +54,7 @@ def make_figure1(out_dir: Path):
         ("preferential_k2", "(c) Preferential sampling (k=2, n=16)", 210),
     ]
 
-    fig, axes = plt.subplots(1, 3, figsize=(6.2, 2.6), constrained_layout=True)
+    fig, axes = plt.subplots(1, 3, figsize=(5.8, 2.5), constrained_layout=True)
 
     dx = max(maxx - minx, 10.0)
     dy = max(maxy - miny, 10.0)
@@ -135,7 +135,7 @@ def make_figure2(raw_csv_path: Path, out_dir: Path):
                     data_arith[nt].append(float(r["error_arith"]) * 100.0)
                     data_voronoi[nt].append(float(r["error_voronoi"]) * 100.0)
 
-    fig, ax = plt.subplots(figsize=(6.2, 3.8), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(5.8, 3.8), constrained_layout=True)
 
     categories = ["regular", "random", "clustered", "preferential_k1", "preferential_k2"]
     x_labels = ["Regular", "Random", "Clustered", "Preferential\n(k=1)", "Preferential\n(k=2)"]
@@ -198,7 +198,7 @@ def make_figure3(summary_csv_path: Path, out_dir: Path):
             if r["scenario"] == "cv_med" and r["contour"] == "rect":
                 rows.append(r)
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.2, 3.4), sharey=True)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(5.8, 3.4), sharey=True)
 
     styles = {
         "regular": ("#000000", "o", "Regular"),
@@ -249,7 +249,8 @@ def make_figure3(summary_csv_path: Path, out_dir: Path):
         lines_labels,
         loc="upper center",
         bbox_to_anchor=(0.5, -0.02),
-        ncol=5,
+        ncol=3,
+        columnspacing=0.8,
         frameon=False,
         fontsize=6.8,
     )
@@ -267,7 +268,7 @@ def make_figure4(summary_csv_path: Path, out_dir: Path):
             if r["contour"] == "rect" and r["network_type"] in ("preferential_k1", "preferential_k2"):
                 rows.append(r)
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.2, 3.4), sharey=True)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(5.8, 3.4), sharey=True)
 
     cv_styles = {
         "cv_low": ("#777777", ":", "o", "Low CV (10%)"),
@@ -361,7 +362,7 @@ def make_figure5(main_summary_csv: Path, neutral_summary_csv: Path, out_dir: Pat
     x_positions = np.arange(len(categories))
     width = 0.19
 
-    fig, ax = plt.subplots(figsize=(6.2, 3.8), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(5.8, 3.8), constrained_layout=True)
 
     def get_vals_errs(d, key_val, key_err):
         vals = [d.get(c, {}).get(key_val, 0.0) for c in categories]
