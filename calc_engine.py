@@ -13,6 +13,12 @@ CATEGORY_THRESHOLDS = (
     (0.2, 40.0, "C1"),
 )
 
+ROCK_ORIGIN_NAMES = {
+    "sedimentary": "осадочный",
+    "metamorphic": "метаморфический",
+    "magmatic": "магматический",
+}
+
 
 def fmt_num(value: float | int | None, digits: int = 0) -> str:
     if value is None:
@@ -20,6 +26,29 @@ def fmt_num(value: float | int | None, digits: int = 0) -> str:
     val_float = float(value)
     formatted = f"{val_float:,.{digits}f}"
     return formatted.replace(",", "\u00a0").replace(".", ",")
+
+
+def to_dms(value: float, axis: str = "lat") -> dict:
+    val = abs(float(value))
+    d = int(val)
+    rem_minutes = (val - d) * 60.0
+    m = int(rem_minutes)
+    s = (rem_minutes - m) * 60.0
+    s = round(s, 1)
+    if s >= 60.0:
+        s = 0.0
+        m += 1
+    if m >= 60:
+        m = 0
+        d += 1
+    return {
+        "d": d,
+        "m": m,
+        "s": s,
+        "d_str": str(d),
+        "m_str": f"{m:02d}",
+        "s_str": fmt_num(s, 1),
+    }
 
 
 def _convert_to_metric(coords: list[tuple[float, float]], center_lon: float, center_lat: float) -> list[tuple[float, float]]:
@@ -139,8 +168,185 @@ def calculate_deposit(payload: dict) -> dict:
         })
 
     generated_date = datetime.now().strftime("%d.%m.%Y")
+    passport_date = payload.get("passport_date") or generated_date
+
+    corner_points_geo = payload.get("corner_points_geo")
+    corner_points = []
+    if corner_points_geo:
+        for idx, pt in enumerate(corner_points_geo):
+            lat_d = to_dms(pt["lat"], "lat")
+            lon_d = to_dms(pt["lon"], "lon")
+            corner_points.append({
+                "n": str(idx + 1),
+                "lat_d": lat_d["d_str"],
+                "lat_m": lat_d["m_str"],
+                "lat_s": lat_d["s_str"],
+                "lon_d": lon_d["d_str"],
+                "lon_m": lon_d["m_str"],
+                "lon_s": lon_d["s_str"],
+            })
+    elif coord_system == "geographic":
+        for idx, pt in enumerate(contour_raw):
+            lat_d = to_dms(pt["y"], "lat")
+            lon_d = to_dms(pt["x"], "lon")
+            corner_points.append({
+                "n": str(idx + 1),
+                "lat_d": lat_d["d_str"],
+                "lat_m": lat_d["m_str"],
+                "lat_s": lat_d["s_str"],
+                "lon_d": lon_d["d_str"],
+                "lon_m": lon_d["m_str"],
+                "lon_s": lon_d["s_str"],
+            })
+
+    corner_points_note = (
+        ""
+        if corner_points
+        else "Географические координаты не заданы (локальная система координат)"
+    )
+
+    storage = payload.get("storage") or {}
+    storage_length_m = fmt_num(storage.get("length_m"), 1) if storage.get("length_m") is not None else "________"
+    storage_width_m = fmt_num(storage.get("width_m"), 1) if storage.get("width_m") is not None else "________"
+    storage_height_m = fmt_num(storage.get("height_m"), 1) if storage.get("height_m") is not None else "________"
+    storage_area_km2 = fmt_num(area_m2 / 1000000.0, 4)
+    storage_volume_thousand_m3 = fmt_num(volume_m3 / 1000.0, 1)
+
+    unit = payload.get("unit") or "тыс. т"
+    if unit == "тыс. т":
+        current_reserves_num = reserves_t / 1000.0
+        current_reserves_str = fmt_num(current_reserves_num, 3)
+    else:
+        current_reserves_num = reserves_t
+        current_reserves_str = fmt_num(current_reserves_num, 0)
+
+    prev_res = payload.get("previous_reserves_t")
+    inc_res = payload.get("reserves_increment_t")
+    real_res = payload.get("reserves_realized_t")
+
+    reserves_balance_warning = None
+    if prev_res is not None and inc_res is not None and real_res is not None:
+        balance_sum = prev_res + inc_res - real_res
+        diff_tons = abs(balance_sum - reserves_t) / reserves_t if reserves_t > 0 else 0.0
+        diff_kt = abs(balance_sum - (reserves_t / 1000.0)) / (reserves_t / 1000.0) if reserves_t > 0 else 0.0
+        if diff_tons > 0.01 and diff_kt > 0.01:
+            reserves_balance_warning = (
+                f"Предупреждение: баланс запасов (предыдущие {prev_res} + прирост {inc_res} - реализовано {real_res} = {balance_sum}) "
+                f"отличается от расчётных запасов ({reserves_t} т / {reserves_kt} тыс. т)"
+            )
+
+    digits_res = 3 if unit == "тыс. т" else 0
+    previous_reserves_str = fmt_num(prev_res, digits_res) if prev_res is not None else "________"
+    reserves_increment_str = fmt_num(inc_res, digits_res) if inc_res is not None else "________"
+    reserves_realized_str = fmt_num(real_res, digits_res) if real_res is not None else "________"
+
+    reserves_methodology = (
+        payload.get("reserves_methodology")
+        or "Подсчёт выполнен методом среднего арифметического (объёмный метод): запасы определены как произведение площади контура, средневзвешенной мощности и плотности"
+    )
+
+    composition = payload.get("composition") or {}
+    composition_mineral = composition.get("mineral") or "не указано"
+    composition_petrographic = composition.get("petrographic") or "не указано"
+    composition_granulometric = composition.get("granulometric") or "не указано"
+    composition_physico_mechanical = composition.get("physico_mechanical") or "не указано"
+
+    chemical_oxides_raw = composition.get("chemical_oxides")
+    chemical_oxides = []
+    if chemical_oxides_raw:
+        for ox in chemical_oxides_raw:
+            chemical_oxides.append({
+                "name": ox["name"],
+                "value_pct": fmt_num(ox["value_pct"], 1),
+            })
+    else:
+        chemical_oxides.append({"name": "не указано", "value_pct": "—"})
+
+    extra_chars_raw = payload.get("extra_characteristics")
+    extra_characteristics = []
+    if extra_chars_raw:
+        for ch in extra_chars_raw:
+            extra_characteristics.append({
+                "name": ch["name"],
+                "description": ch["description"],
+            })
+    else:
+        extra_characteristics.append({"name": "не указано", "description": "не указано"})
+
+    apps_raw = payload.get("applications")
+    applications = []
+    if apps_raw:
+        for a in apps_raw:
+            applications.append({
+                "mineral": a.get("mineral") or mineral_type,
+                "usage": a.get("usage") or "не указано",
+                "standard": a.get("standard") or "не указано",
+            })
+    else:
+        applications.append({
+            "mineral": mineral_type,
+            "usage": "не указано",
+            "standard": "не указано",
+        })
+
+    rock_origin_code = payload.get("rock_origin")
+    rock_origin_text = ROCK_ORIGIN_NAMES.get(rock_origin_code, "не указано")
+
+    contract_info = payload.get("contract_info") or license_number
+    legal_address = payload.get("legal_address") or "не указано"
+    phone = payload.get("phone") or "не указано"
+    parent_deposit_name = payload.get("parent_deposit_name") or deposit_name
+    mining_method = payload.get("mining_method") or "открытый (карьерный)"
+    oblast = payload.get("oblast") or region
+    district = payload.get("district") or "не указано"
+    locality = payload.get("locality") or "не указано"
+
+    explanatory_note = [
+        f"1. Сведения о недропользователе и контрактных правах: паспорт месторождения составлен для организации {company_name}. Лицензия (контракт) на недропользование: {contract_info}. Юридический адрес: {legal_address}. Телефон: {phone}.",
+        f"2. Административно-территориальное положение: объект расположен в пределах: область {oblast}, район {district}, населенный пункт {locality}.",
+        f"3. Геологическое строение: {narrative_geology}",
+        f"4. Способ отработки пород материнского месторождения ({parent_deposit_name}): {mining_method}.",
+        f"5. Геометрические параметры залежи: площадь горного отвода составляет {fmt_num(area_ha, 2)} га ({fmt_num(area_m2, 0)} м²), периметр контура — {fmt_num(perimeter_m, 0)} м. Средневзвешенная мощность продуктивной толщи — {fmt_num(thickness_weighted_m, 2)} м.",
+        f"6. Качественная характеристика полезного ископаемого: {narrative_quality}",
+        f"7. Методика и результаты подсчёта запасов: {reserves_methodology}. {narrative_reserves}",
+        f"8. Вещественный состав: минеральный состав — {composition_mineral}; петрографический состав — {composition_petrographic}; гранулометрический состав — {composition_granulometric}; физико-механические свойства — {composition_physico_mechanical}.",
+        f"9. Область применения: полезное ископаемое ({mineral_type}) предназначено для использования в строительстве и промышленности согласно действующим техническим регламентам и стандартам.",
+    ]
 
     fmt = {
+        "confidentiality_stamp": payload.get("confidentiality_stamp") or "не секретно",
+        "copy_number": payload.get("copy_number") or "1",
+        "territorial_passport_number": payload.get("territorial_passport_number") or "________",
+        "authority_passport_number": payload.get("authority_passport_number") or "________",
+        "compiler_name": payload.get("compiler_name") or "________",
+        "checker_name": payload.get("checker_name") or "________",
+        "passport_date": passport_date,
+        "contract_info": contract_info,
+        "legal_address": legal_address,
+        "phone": phone,
+        "parent_deposit_name": parent_deposit_name,
+        "mining_method": mining_method,
+        "oblast": oblast,
+        "district": district,
+        "locality": locality,
+        "storage_length_m": storage_length_m,
+        "storage_width_m": storage_width_m,
+        "storage_height_m": storage_height_m,
+        "storage_area_km2": storage_area_km2,
+        "storage_volume_thousand_m3": storage_volume_thousand_m3,
+        "reserves_methodology": reserves_methodology,
+        "rock_origin_text": rock_origin_text,
+        "unit": unit,
+        "previous_passport_number": payload.get("previous_passport_number") or "________",
+        "previous_reserves": previous_reserves_str,
+        "reserves_increment": reserves_increment_str,
+        "reserves_realized": reserves_realized_str,
+        "current_reserves": current_reserves_str,
+        "composition_mineral": composition_mineral,
+        "composition_petrographic": composition_petrographic,
+        "composition_granulometric": composition_granulometric,
+        "composition_physico_mechanical": composition_physico_mechanical,
+        "corner_points_note": corner_points_note,
         "area_ha": fmt_num(area_ha, 2),
         "area_m2": fmt_num(area_m2, 0),
         "perimeter_m": fmt_num(perimeter_m, 0),
@@ -190,6 +396,12 @@ def calculate_deposit(payload: dict) -> dict:
         "reserves_category": reserves_category,
         "quality": quality,
         "borehole_rows": fmt_borehole_rows,
+        "corner_points": corner_points,
+        "chemical_oxides": chemical_oxides,
+        "extra_characteristics": extra_characteristics,
+        "applications": applications,
+        "explanatory_note": explanatory_note,
+        "reserves_balance_warning": reserves_balance_warning,
         "fmt": fmt,
         "narrative_geology": narrative_geology,
         "narrative_reserves": narrative_reserves,

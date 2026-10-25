@@ -10,10 +10,23 @@ class DocumentBuildError(Exception):
 
 _deposit_names: dict[str, str] = {}
 
+REQUIRED_CONTEXT_KEYS = (
+    "fmt",
+    "corner_points",
+    "explanatory_note",
+    "chemical_oxides",
+    "extra_characteristics",
+    "applications",
+)
+
 
 def build_passport(context: dict) -> str:
-    if "fmt" not in context or not isinstance(context["fmt"], dict):
-        raise DocumentBuildError("В контексте отсутствует обязательный словарь форматированных данных 'fmt'")
+    for key in REQUIRED_CONTEXT_KEYS:
+        if key not in context:
+            raise DocumentBuildError(f"В контексте отсутствует обязательный ключ: {key}")
+    if not isinstance(context["fmt"], dict):
+        raise DocumentBuildError("Ключ 'fmt' должен быть словарем")
+
     try:
         template_path = Path(__file__).resolve().parent / "templates" / "passport_template.docx"
         output_dir = Path(__file__).resolve().parent / "output"

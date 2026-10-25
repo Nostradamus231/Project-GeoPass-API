@@ -32,20 +32,25 @@ def generate_passport(request: PassportRequest):
             },
         )
 
+    summary = {
+        "area_m2": calc_result["area_m2"],
+        "area_ha": calc_result["area_ha"],
+        "thickness_weighted_m": calc_result["thickness_weighted_m"],
+        "volume_m3": calc_result["volume_m3"],
+        "reserves_t": calc_result["reserves_t"],
+        "reserves_kt": calc_result["reserves_kt"],
+        "reserves_category": calc_result["reserves_category"],
+        "boreholes_outside_contour": calc_result["boreholes_outside_contour"],
+        "corner_points_count": len(calc_result.get("corner_points", [])),
+    }
+    if calc_result.get("reserves_balance_warning"):
+        summary["reserves_balance_warning"] = calc_result["reserves_balance_warning"]
+
     return PassportResponse(
         status="ok",
         file_id=file_id,
         download_url=f"/download/{file_id}",
-        summary={
-            "area_m2": calc_result["area_m2"],
-            "area_ha": calc_result["area_ha"],
-            "thickness_weighted_m": calc_result["thickness_weighted_m"],
-            "volume_m3": calc_result["volume_m3"],
-            "reserves_t": calc_result["reserves_t"],
-            "reserves_kt": calc_result["reserves_kt"],
-            "reserves_category": calc_result["reserves_category"],
-            "boreholes_outside_contour": calc_result["boreholes_outside_contour"],
-        },
+        summary=summary,
     )
 
 
@@ -60,9 +65,9 @@ def download_passport(file_id: str):
     deposit_name = get_deposit_name(file_id)
     if deposit_name:
         clean_name = re.sub(r'[\\/*?:"<>|\x00-\x1f]', "_", deposit_name).strip()
-        filename = f"Passport_{clean_name}.docx"
+        filename = f"Passport_N_{clean_name}.docx"
     else:
-        filename = f"Passport_{file_id}.docx"
+        filename = f"Passport_N_{file_id}.docx"
 
     return FileResponse(
         path=str(path),

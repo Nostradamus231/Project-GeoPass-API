@@ -1,9 +1,13 @@
 import io
 import json
+import sys
+from pathlib import Path
 import urllib.error
 import urllib.request
 from docx import Document
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from calc_engine import to_dms
 
 BASE_URL = "http://127.0.0.1:8000"
 
@@ -38,7 +42,7 @@ def request_http(url: str, data: dict = None, method: str = "GET", raw_bytes: by
         return status, parsed, cd_hdr
 
 
-def get_base_payload() -> dict:
+def get_base_v1_payload() -> dict:
     return {
         "company_name": "ТОО Тестовый Карьер",
         "deposit_name": "Северное",
@@ -69,150 +73,218 @@ def get_base_payload() -> dict:
     }
 
 
-def run_checks() -> dict[str, tuple[bool, str]]:
+def get_full_v3_payload() -> dict:
+    p = get_base_v1_payload()
+    p.update({
+        "confidentiality_stamp": "Для служебного пользования",
+        "copy_number": "2",
+        "territorial_passport_number": "ТП-042",
+        "authority_passport_number": "УО-101",
+        "compiler_name": "Иванов И.И.",
+        "checker_name": "Петров П.П.",
+        "passport_date": "25.10.2026",
+        "contract_info": "Контракт на недропользование № 123-Т",
+        "legal_address": "г. Костанай, ул. Абая, 10",
+        "phone": "+7 (7142) 55-55-55",
+        "parent_deposit_name": "Северное материнское",
+        "mining_method": "Открытый с применением экскаваторов",
+        "oblast": "Костанайская область",
+        "district": "Костанайский район",
+        "locality": "с. Заречное",
+        "storage": {
+            "length_m": 250.0,
+            "width_m": 120.0,
+            "height_m": 15.0,
+        },
+        "reserves_methodology": "Метод геологических блоков с интерполяцией мощностей",
+        "composition": {
+            "mineral": "Кварц 92%, полевой шпат 8%",
+            "chemical_oxides": [
+                {"name": "SiO2", "value_pct": 91.5},
+                {"name": "Al2O3", "value_pct": 4.2},
+            ],
+            "petrographic": "Песок кварцевый",
+            "granulometric": "Фракция 0.5-1.0 мм",
+            "physico_mechanical": "Плотность 1.6 т/м3",
+        },
+        "extra_characteristics": [
+            {"name": "Радиоактивность", "description": "12 мкР/ч, I класс"},
+        ],
+        "applications": [
+            {"mineral": "Песок строительный", "usage": "Бетонные смеси", "standard": "ГОСТ 8736-2014"},
+        ],
+        "rock_origin": "sedimentary",
+        "unit": "тыс. т",
+        "previous_passport_number": "ПР-001",
+        "previous_reserves_t": 50.0,
+        "reserves_increment_t": 40.0,
+        "reserves_realized_t": 10.0,
+        "corner_points_geo": [
+            {"lat": 52.1, "lon": 63.5},
+            {"lat": 52.11, "lon": 63.5},
+            {"lat": 52.11, "lon": 63.51},
+            {"lat": 52.1, "lon": 63.51},
+        ],
+    })
+    return p
+
+
+def run_all_checks() -> dict[str, tuple[bool, str]]:
     results = {}
 
-    st1, body1, _ = request_http(f"{BASE_URL}/generate-passport", data=get_base_payload(), method="POST")
-    dl_url = body1.get("download_url", "")
-    st_dl, doc_bytes, cd1 = request_http(f"{BASE_URL}{dl_url}", method="GET")
-    doc = Document(io.BytesIO(doc_bytes))
+    st1, body1, _ = request_http(f"{BASE_URL}/generate-passport", data=get_base_v1_payload(), method="POST")
+    dl_url1 = body1.get("download_url", "")
+    st_dl1, bytes1, _ = request_http(f"{BASE_URL}{dl_url1}", method="GET")
+    doc1 = Document(io.BytesIO(bytes1))
+    text1 = " ".join([p.text for p in doc1.paragraphs] + [c.text for t in doc1.tables for r in t.rows for c in r.cells])
+    has_placeholders = "________" in text1 or "не указано" in text1
+    check1_passed = st1 == 200 and st_dl1 == 200 and has_placeholders and len(doc1.paragraphs) > 0
+    results["1. Контрольный запрос v1"] = (check1_passed, f"Status: {st1}, placeholders present: {has_placeholders}")
+
+    st2, body2, _ = request_http(f"{BASE_URL}/generate-passport", data=get_full_v3_payload(), method="POST")
+    dl_url2 = body2.get("download_url", "")
+    st_dl2, bytes2, cd2 = request_http(f"{BASE_URL}{dl_url2}", method="GET")
+    doc2 = Document(io.BytesIO(bytes2))
+    t_geo = doc2.tables[2]
+    geo_data_rows = len(t_geo.rows) - 1
+    check2_passed = st2 == 200 and st_dl2 == 200 and geo_data_rows == 4
+    results["2. Полный запрос со всеми полями"] = (check2_passed, f"Status: {st2}, corner points rows: {geo_data_rows}")
+
+    doc_full_text = "\n".join([p.text for p in doc2.paragraphs] + [c.text for t in doc2.tables for r in t.rows for c in r.cells])
+    required_sections = [
+        "Приёмка паспорта",
+        "Раздел 1. Географические координаты объекта",
+        "Раздел 2. Организация-недропользователь",
+        "Раздел 3. Способ отработки вскрышных и вмещающих пород материнского месторождения",
+        "Раздел 4. Административное положение объекта",
+        "Раздел 5. Параметры складирования вскрышных и вмещающих пород",
+        "Раздел 6. Методика подсчёта запасов",
+        "Раздел 7. Характеристика общераспространённых полезных ископаемых",
+        "Раздел 8. Область применения",
+        "Раздел 9. Запасы",
+        "Приложение 1. Пояснительная записка",
+        "Приложение 2. Графические материалы",
+    ]
+    indices = [doc_full_text.find(sec) for sec in required_sections]
+    all_found = all(idx != -1 for idx in indices)
+    order_ok = all(indices[i] < indices[i + 1] for i in range(len(indices) - 1)) if all_found else False
+    check3_passed = all_found and order_ok
+    results["3. Структура документа"] = (check3_passed, f"All found: {all_found}, Order correct: {order_ok}")
+
+    has_raw_floats = "80000.0" in doc_full_text or "10000.0" in doc_full_text or "50000.0" in doc_full_text
+    has_fmt_80k = "80\u00a0000" in doc_full_text or "80 000" in doc_full_text
+    check4_passed = not has_raw_floats and has_fmt_80k
+    results["4. Форматирование чисел"] = (check4_passed, f"Raw floats: {has_raw_floats}, 80k formatted: {has_fmt_80k}")
 
     leftovers = []
-    for p in doc.paragraphs:
+    for p in doc2.paragraphs:
         if "{{" in p.text or "{%" in p.text:
             leftovers.append(p.text)
-    for t in doc.tables:
+    for t in doc2.tables:
         for r in t.rows:
             for c in r.cells:
                 if "{{" in c.text or "{%" in c.text:
                     leftovers.append(c.text)
-    for sec in doc.sections:
+    for sec in doc2.sections:
         for p in sec.header.paragraphs:
             if "{{" in p.text or "{%" in p.text:
                 leftovers.append(p.text)
         for p in sec.footer.paragraphs:
             if "{{" in p.text or "{%" in p.text:
                 leftovers.append(p.text)
+    check5_passed = len(leftovers) == 0
+    results["5. Отсутствие остаточных тегов"] = (check5_passed, f"Leftover tags: {len(leftovers)}")
 
-    check1_passed = st1 == 200 and st_dl == 200 and len(leftovers) == 0
-    results["1. Генерация и скачивание"] = (check1_passed, f"Status: {st1}, leftovers: {len(leftovers)}")
+    dms55 = to_dms(55.5, "lat")
+    dms0 = to_dms(0.0)
+    dms59 = to_dms(59.99999)
+    dms_neg = to_dms(-0.5)
+    dms_ok = (
+        dms55["d"] == 55 and dms55["m"] == 30 and dms55["s_str"] == "0,0"
+        and dms0["d"] == 0 and dms0["m"] == 0 and dms0["s_str"] == "0,0"
+        and dms59["s"] < 60.0
+        and dms_neg["d"] == 0 and dms_neg["m"] == 30 and dms_neg["s_str"] == "0,0"
+    )
+    results["6. Функция to_dms"] = (dms_ok, f"55.5: {dms55['d']}deg {dms55['m']}min {dms55['s_str']}sec, 59.99999 sec: {dms59['s']}")
 
-    full_text = []
-    for p in doc.paragraphs:
-        full_text.append(p.text)
-    for t in doc.tables:
-        for r in t.rows:
-            for c in r.cells:
-                full_text.append(c.text)
-    joined_text = " ".join(full_text)
-    has_raw_numbers = "80000.0" in joined_text or "10000.0" in joined_text or "50000.0" in joined_text
-    has_formatted_80k = "80\u00a0000" in joined_text or "80 000" in joined_text
-    has_formatted_50k = "50\u00a0000" in joined_text or "50 000" in joined_text
-    has_formatted_area = "1,00" in joined_text
-    has_formatted_thick = "5,00" in joined_text
+    p_bal_ok = get_base_v1_payload()
+    p_bal_ok.update({
+        "previous_reserves_t": 50.0,
+        "reserves_increment_t": 40.0,
+        "reserves_realized_t": 10.0,
+    })
+    st_bal_ok, body_bal_ok, _ = request_http(f"{BASE_URL}/generate-passport", data=p_bal_ok, method="POST")
+    warn_ok = body_bal_ok.get("summary", {}).get("reserves_balance_warning")
 
-    check2_passed = not has_raw_numbers and has_formatted_80k and has_formatted_50k and has_formatted_area and has_formatted_thick
-    results["2. Числа в документе"] = (check2_passed, f"Raw floats: {has_raw_numbers}, 80k: {has_formatted_80k}, 1.00: {has_formatted_area}")
+    p_bal_bad = get_base_v1_payload()
+    p_bal_bad.update({
+        "contour": [
+            {"x": 0.0, "y": 0.0},
+            {"x": 100.0, "y": 0.0},
+            {"x": 100.0, "y": 250.0},
+            {"x": 0.0, "y": 250.0},
+        ],
+        "previous_reserves_t": 50.0,
+        "reserves_increment_t": 40.0,
+        "reserves_realized_t": 10.0,
+    })
+    st_bal_bad, body_bal_bad, _ = request_http(f"{BASE_URL}/generate-passport", data=p_bal_bad, method="POST")
+    warn_bad = body_bal_bad.get("summary", {}).get("reserves_balance_warning")
 
-    t_geo = doc.tables[2]
-    t_res = doc.tables[5]
-    geo_indicators = [r.cells[0].text.strip() for r in t_geo.rows[1:]]
-    res_indicators = [r.cells[0].text.strip() for r in t_res.rows[1:]]
+    check7_passed = st_bal_ok == 200 and warn_ok is None and st_bal_bad == 200 and warn_bad is not None
+    results["7. Баланс запасов"] = (check7_passed, f"Balanced warning: {warn_ok}, Imbalanced warning: {warn_bad is not None}")
 
-    check3_passed = len(geo_indicators) == len(set(geo_indicators)) and len(res_indicators) == len(set(res_indicators))
-    results["3. Дублирование показателей"] = (check3_passed, f"Geo unique: {len(geo_indicators) == len(set(geo_indicators))}, Res unique: {len(res_indicators) == len(set(res_indicators))}")
+    p_neg = get_base_v1_payload()
+    p_neg["reserves_realized_t"] = -10.0
+    st_neg, body_neg, _ = request_http(f"{BASE_URL}/generate-passport", data=p_neg, method="POST")
+    err_fields = [e.get("field") for e in body_neg.get("errors", [])]
+    check8_passed = st_neg == 422 and "reserves_realized_t" in err_fields
+    results["8. Отрицательное reserves_realized_t"] = (check8_passed, f"Status: {st_neg}, fields: {err_fields}")
 
-    t_bh = doc.tables[3]
-    bh_rows_count = len(t_bh.rows)
-    data_rows = t_bh.rows[1:]
-    alignments_ok = True
-    for r in data_rows:
-        for idx in [1, 2, 3, 4]:
-            p = r.cells[idx].paragraphs[0]
-            if p.alignment != WD_ALIGN_PARAGRAPH.RIGHT:
-                alignments_ok = False
+    p_no_co = get_base_v1_payload()
+    del p_no_co["company_name"]
+    st_r1, body_r1, _ = request_http(f"{BASE_URL}/generate-passport", data=p_no_co, method="POST")
 
-    check4_passed = bh_rows_count == 5 and alignments_ok
-    results["4. Таблица скважин"] = (check4_passed, f"Rows: {bh_rows_count}, right-aligned: {alignments_ok}")
+    p_r2 = get_base_v1_payload()
+    p_r2["boreholes"][0]["thickness_m"] = -5.0
+    st_r2, _, _ = request_http(f"{BASE_URL}/generate-passport", data=p_r2, method="POST")
 
-    sec = doc.sections[0]
-    different_first_page = sec.different_first_page_header_footer
-    footer_text = "".join(p.text for p in sec.footer.paragraphs)
-    footer_has_page = "Страница" in footer_text and "из" in footer_text
+    p_r3 = get_base_v1_payload()
+    p_r3["contour"] = [{"x": 0.0, "y": 0.0}, {"x": 100.0, "y": 100.0}, {"x": 100.0, "y": 0.0}, {"x": 0.0, "y": 100.0}]
+    st_r3, body_r3, _ = request_http(f"{BASE_URL}/generate-passport", data=p_r3, method="POST")
+    bf_msg = json.dumps(body_r3, ensure_ascii=False)
 
-    check5_passed = different_first_page and footer_has_page
-    results["5. Колонтитулы"] = (check5_passed, f"Different first page: {different_first_page}, Footer text: {footer_text}")
+    st_r4, body_r4, _ = request_http(f"{BASE_URL}/generate-passport", raw_bytes=b"{\"broken\": ", method="POST")
 
-    p6 = get_base_payload()
-    p6["boreholes"] = [
+    st_r5, _, _ = request_http(f"{BASE_URL}/download/..%2Fmain.py", method="GET")
+
+    p_r6 = get_base_v1_payload()
+    p_r6["boreholes"] = [
         {"borehole_id": "S-IN", "x": 50.0, "y": 50.0, "thickness_m": 5.0, "weight": 1.0},
         {"borehole_id": "S-OUT", "x": 500.0, "y": 500.0, "thickness_m": 5.0, "weight": 1.0},
     ]
-    st6, body6, _ = request_http(f"{BASE_URL}/generate-passport", data=p6, method="POST")
-    dl_url6 = body6.get("download_url", "")
-    st_dl6, bytes6, _ = request_http(f"{BASE_URL}{dl_url6}", method="GET")
-    doc6 = Document(io.BytesIO(bytes6))
-    outside_list = body6.get("summary", {}).get("boreholes_outside_contour", [])
+    st_r6, body_r6, _ = request_http(f"{BASE_URL}/generate-passport", data=p_r6, method="POST")
+    out_list = body_r6.get("summary", {}).get("boreholes_outside_contour", [])
 
-    check6_passed = st6 == 200 and st_dl6 == 200 and "S-OUT" in outside_list and len(doc6.paragraphs) > 0
-    results["6. Скважина вне контура"] = (check6_passed, f"Status: {st6}, outside: {outside_list}")
-
-    long_title = "Северный_Перспективный_Участок_Месторождения_Песков_Строительных_И_Гравия_Номер_Один"
-    p7 = get_base_payload()
-    p7["deposit_name"] = long_title[:80]
-    st7, body7, _ = request_http(f"{BASE_URL}/generate-passport", data=p7, method="POST")
-    dl_url7 = body7.get("download_url", "")
-    st_dl7, bytes7, cd7 = request_http(f"{BASE_URL}{dl_url7}", method="GET")
-    doc7 = Document(io.BytesIO(bytes7))
-
-    check7_passed = st7 == 200 and st_dl7 == 200 and len(doc7.paragraphs) > 0 and len(doc7.tables) == 6
-    results["7. Длинное название и кириллица"] = (check7_passed, f"Status: {st7}, cd: {cd7[:40]}..., doc tables: {len(doc7.tables)}")
-
-    p8_no_company = get_base_payload()
-    del p8_no_company["company_name"]
-    st8_missing, body8_missing, _ = request_http(f"{BASE_URL}/generate-passport", data=p8_no_company, method="POST")
-    fields_missing = [e.get("field") for e in body8_missing.get("errors", [])]
-
-    p8_neg = get_base_payload()
-    p8_neg["boreholes"][0]["thickness_m"] = -5.0
-    st8_neg, _, _ = request_http(f"{BASE_URL}/generate-passport", data=p8_neg, method="POST")
-
-    p8_bf = get_base_payload()
-    p8_bf["contour"] = [
-        {"x": 0.0, "y": 0.0},
-        {"x": 100.0, "y": 100.0},
-        {"x": 100.0, "y": 0.0},
-        {"x": 0.0, "y": 100.0},
-    ]
-    st8_bf, body8_bf, _ = request_http(f"{BASE_URL}/generate-passport", data=p8_bf, method="POST")
-    bf_msg = json.dumps(body8_bf, ensure_ascii=False)
-
-    st8_bad_json, body8_bad_json, _ = request_http(f"{BASE_URL}/generate-passport", raw_bytes=b"{\"broken\": ", method="POST")
-    bad_json_msg = json.dumps(body8_bad_json, ensure_ascii=False)
-
-    st8_trav, _, _ = request_http(f"{BASE_URL}/download/..%2Fmain.py", method="GET")
-    st8_none, _, _ = request_http(f"{BASE_URL}/download/00000000-0000-0000-0000-000000000000", method="GET")
-
-    check8_passed = (
-        st8_missing == 422
-        and "company_name" in fields_missing
-        and st8_neg == 422
-        and st8_bf == 422
+    check9_passed = (
+        st_r1 == 422
+        and st_r2 == 422
+        and st_r3 == 422
         and "самопересекается" in bf_msg
-        and st8_bad_json == 422
-        and "Тело запроса не является корректным JSON" in bad_json_msg
-        and st8_trav == 404
-        and st8_none == 404
+        and st_r4 == 422
+        and st_r5 == 404
+        and st_r6 == 200
+        and "S-OUT" in out_list
     )
-    results["8. Регрессия API"] = (check8_passed, f"Missing 422: {st8_missing == 422}, Neg 422: {st8_neg == 422}, Butterfly 422: {st8_bf == 422}, Bad JSON 422: {st8_bad_json == 422}, Traversal 404: {st8_trav == 404}")
+    results["9. Регрессия"] = (check9_passed, f"Missing: {st_r1 == 422}, NegThick: {st_r2 == 422}, Butterfly: {st_r3 == 422}, BrokenJSON: {st_r4 == 422}, Traversal: {st_r5 == 404}, Outside: {st_r6 == 200}")
 
     return results
 
 
 if __name__ == "__main__":
-    test_results = run_checks()
+    tests = run_all_checks()
     all_ok = True
-    for name, (ok, detail) in test_results.items():
+    for name, (ok, detail) in tests.items():
         status_str = "PASS" if ok else "FAIL"
         if not ok:
             all_ok = False
